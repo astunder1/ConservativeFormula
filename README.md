@@ -90,4 +90,3 @@ Raw and processed data are ignored in Git because they are large and reproducibl
 - script-based exhibit generation
 - clear separation between raw data prep and final outputs
 
-It is not intended to be a perfect archival copy of the original Dec2 notebook workflow. That legacy material was used as reference while building a cleaner codebase.

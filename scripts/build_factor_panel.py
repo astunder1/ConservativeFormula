@@ -16,7 +16,6 @@ from conservative_formula.factors import (
     add_net_payout_yield,
     calculate_12_1_momentum,
     calculate_rolling_volatility,
-    drop_duplicate_stock_dates,
     keep_stocks_with_min_history,
 )
 
@@ -59,14 +58,9 @@ def main() -> None:
     frame = load_stock_data(input_path)
 
     print("Applying factor construction pipeline...")
-    frame = keep_stocks_with_min_history(frame, stock_column="PERMNO", date_column="Date", min_periods=36)
+    frame = keep_stocks_with_min_history(frame, stock_column="PERMNO", min_periods=36)
     frame = add_dividend_yield(frame, dividend_column="DIVAMT", price_column="ALTPRC", output_column="Div Yield")
-    frame = drop_duplicate_stock_dates(
-        frame,
-        stock_column="PERMNO",
-        date_column="Date",
-        tie_breaker_column="DIVAMT",
-    )
+    
     frame = add_net_payout_yield(
         frame,
         stock_column="PERMNO",

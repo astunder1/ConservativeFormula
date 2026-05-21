@@ -2,17 +2,10 @@
 
 import pandas as pd
 
-
 EXCHANGE_CODE_MAP = {
     "1": "NYSE",
-    "1.0": "NYSE",
-    "31.0": "NYSE",
     "2": "AMEX",
-    "2.0": "AMEX",
-    "32.0": "AMEX",
     "3": "NASDAQ",
-    "3.0": "NASDAQ",
-    "33.0": "NASDAQ",
     "31": "NYSE",
     "32": "AMEX",
     "33": "NASDAQ",
@@ -33,16 +26,16 @@ def rename_and_parse_date(frame: pd.DataFrame) -> pd.DataFrame:
 
 def filter_supported_exchanges(frame: pd.DataFrame) -> pd.DataFrame:
     """Keep only NYSE, AMEX, and NASDAQ observations."""
-    cleaned = frame
-    cleaned["EXCHCD"] = cleaned["EXCHCD"].astype(str).replace(EXCHANGE_CODE_MAP)
-    return cleaned.loc[cleaned["EXCHCD"].isin(VALID_EXCHANGES)]
+    cleaned = frame.copy()
+    exchcd = pd.to_numeric(cleaned["EXCHCD"], errors="coerce").astype("Int64")
+    cleaned["EXCHCD"] = exchcd.astype(str).replace(EXCHANGE_CODE_MAP)
+    return cleaned.loc[cleaned["EXCHCD"].isin(VALID_EXCHANGES)].copy()
 
 
 def clean_basic_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """Apply the notebook's basic row-level cleaning steps."""
     cleaned = frame.copy()
     cleaned["ALTPRC"] = cleaned["ALTPRC"].abs()
-    cleaned = cleaned.dropna(subset=["DLRET", "RETX", "ALTPRC", "SHROUT"], how="all")
     cleaned = cleaned.dropna(subset=["DLRET", "RETX"], how="all")
     return cleaned
 
@@ -51,39 +44,74 @@ def build_adjusted_return(frame: pd.DataFrame) -> pd.DataFrame:
     """Reproduce the notebook's delisting-adjusted return logic."""
     cleaned = frame.copy()
 
-    cleaned.loc[cleaned["DLRET"].isnull(), "RET ADJ"] = cleaned["RET"]
-    cleaned.loc[
-        cleaned["DLRET"].notnull() & cleaned["DLSTCD"].notnull(),
-        "RET ADJ",
-    ] = cleaned["DLRET"]
-    cleaned.loc[cleaned["DLSTCD"].between(551, 574), "RET ADJ"] = -0.3
-    cleaned.loc[cleaned["DLSTCD"].isin([500, 520, 580, 584]), "RET ADJ"] = -0.3
-    cleaned.loc[cleaned["DLSTCD"] == 100, "RET ADJ"] = cleaned["RET"]
+    cleaned["RET"] = pd.to_numeric(cleaned["RET"], errors="coerce")
+    cleaned["DLRET"] = pd.to_numeric(cleaned["DLRET"], errors="coerce")
+    cleaned["DLSTCD"] = pd.to_numeric(cleaned["DLSTCD"], errors="coerce")
+
+    performance_delist = cleaned["DLSTCD"].between(551, 574) | cleaned["DLSTCD"].isin(
+        [500, 520, 580, 584]
+    )
+
+    # Default to the ordinary monthly return.
+    cleaned["RET ADJ"] = cleaned["RET"]
+
+    # Use CRSP delisting return when it is available.
+    cleaned.loc[cleaned["DLRET"].notna(), "RET ADJ"] = cleaned["DLRET"]
+
+    # Impute -30% for selected performance-related delistings when no usable
+    # delisting return is available.
+    cleaned.loc[cleaned["DLRET"].isna() & performance_delist, "RET ADJ"] = -0.3
 
     recognized_delisting = (
-        cleaned["DLSTCD"].isnull()
-        | (cleaned["DLSTCD"].notnull() & cleaned["DLRET"].notnull())
-        | cleaned["DLSTCD"].between(551, 574)
-        | cleaned["DLSTCD"].isin([500, 520, 580, 584, 100])
+        cleaned["DLSTCD"].isna()
+        | cleaned["DLRET"].notna()
+        | performance_delist
+        | (cleaned["DLSTCD"] == 100)
     )
-    cleaned.loc[~recognized_delisting, "RET ADJ"] = -1
+    cleaned.loc[~recognized_delisting, "RET ADJ"] = -1.0
 
-    cleaned.loc[
-        cleaned["DLRET"].isin(["P", "S"])
-        & pd.to_numeric(cleaned["RET"], errors="coerce").notna()
-        & pd.to_numeric(cleaned["RET ADJ"], errors="coerce").isna(),
-        "RET ADJ",
-    ] = cleaned["RET"]
-
-    cleaned["RET ADJ"] = pd.to_numeric(cleaned["RET ADJ"], errors="coerce")
     cleaned = cleaned.dropna(subset=["RET ADJ"])
-    cleaned["RET ADJ"] = cleaned["RET ADJ"].clip(upper=RETURN_CAP)
+    cleaned["RET ADJ"] = cleaned["RET ADJ"].clip(lower=-1.0, upper=RETURN_CAP)
     return cleaned
+
+    # cleaned.loc[cleaned["DLRET"].isnull(), "RET ADJ"] = cleaned["RET"]
+    # cleaned.loc[
+    #     cleaned["DLRET"].notnull() & cleaned["DLSTCD"].notnull(),
+    #     "RET ADJ",
+    # ] = cleaned["DLRET"]
+
+    # # Impute -30% for selected performance-related delistings when no usable
+    # # delisting return is available, following the common CRSP convention in
+    # # the accounting/asset-pricing literature.
+    # cleaned.loc[cleaned["DLSTCD"].between(551, 574), "RET ADJ"] = -0.3
+    # cleaned.loc[cleaned["DLSTCD"].isin([500, 520, 580, 584]), "RET ADJ"] = -0.3
+    # cleaned.loc[cleaned["DLSTCD"] == 100, "RET ADJ"] = cleaned["RET"]
+
+    # recognized_delisting = (
+    #     cleaned["DLSTCD"].isnull()
+    #     | (cleaned["DLSTCD"].notnull() & cleaned["DLRET"].notnull())
+    #     | cleaned["DLSTCD"].between(551, 574)
+    #     | cleaned["DLSTCD"].isin([500, 520, 580, 584, 100])
+    # )
+    # cleaned.loc[~recognized_delisting, "RET ADJ"] = -1
+
+    # cleaned.loc[
+    #     cleaned["DLRET"].isin(["P", "S"])
+    #     & pd.to_numeric(cleaned["RET"], errors="coerce").notna()
+    #     & pd.to_numeric(cleaned["RET ADJ"], errors="coerce").isna(),
+    #     "RET ADJ",
+    # ] = cleaned["RET"]
+
+    # cleaned["RET ADJ"] = pd.to_numeric(cleaned["RET ADJ"], errors="coerce")
+    # cleaned = cleaned.dropna(subset=["RET ADJ"])
+    # cleaned["RET ADJ"] = cleaned["RET ADJ"].clip(upper=RETURN_CAP)
+    # return cleaned
 
 
 def add_market_cap_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """Add market cap and lagged market cap exactly as in the legacy notebook."""
     cleaned = frame.copy()
+    cleaned = cleaned.sort_values(["PERMNO", "Date"])
     cleaned["MKT Cap"] = cleaned["ALTPRC"] * cleaned["SHROUT"]
     cleaned["Lagged MKT Cap"] = cleaned.groupby("PERMNO")["MKT Cap"].shift(1)
     return cleaned

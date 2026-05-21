@@ -38,19 +38,19 @@ def split_by_volatility(
         method="first",
         ascending=True,
     )
+    ranked["Group Count"] = ranked.groupby(date_column)[volatility_column].transform("size")
+    ranked["Split Size"] = group_size
 
-    low_volatility_list = []
-    high_volatility_list = []
+    mask = ranked["Group Count"] < group_size * 2
+    ranked.loc[mask, "Split Size"] = ranked.loc[mask, "Group Count"] // 2
 
-    for _, group in ranked.groupby(date_column):
-        total_stocks = len(group)
-        dynamic_group_size = total_stocks // 2 if total_stocks < group_size * 2 else group_size
-        low_volatility_list.append(group.loc[group["Volatility Rank"] <= dynamic_group_size].copy())
-        high_volatility_list.append(group.loc[group["Volatility Rank"] > dynamic_group_size].copy())
+    low_volatility = ranked.loc[ranked["Volatility Rank"] <= ranked["Split Size"]].copy()
+    high_volatility = ranked.loc[ranked["Volatility Rank"] > ranked["Split Size"]].copy()
 
-    low_volatility = pd.concat(low_volatility_list, ignore_index=True)
-    high_volatility = pd.concat(high_volatility_list, ignore_index=True)
-    return low_volatility, high_volatility
+    return (
+        low_volatility.drop(columns=["Volatility Rank", "Group Count", "Split Size"]),
+        high_volatility.drop(columns=["Volatility Rank", "Group Count", "Split Size"]),
+    )
 
 
 def compute_combined_rank(
@@ -97,7 +97,7 @@ def get_rebalance_dates(frame: pd.DataFrame, date_column: str = "Date") -> pd.Se
 
 def build_equal_weight_returns(
     frame: pd.DataFrame,
-    selected_ids: pd.Series | list,
+    selected_ids: pd.Series | list | pd.Index,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
     id_column: str = "PERMNO",
@@ -188,11 +188,3 @@ def run_speculative_selection(
         rank_column="Combined_Rank",
         top_n=top_portfolio_n,
     )
-
-
-def equal_weight_portfolio(frame: pd.DataFrame, id_column: str) -> pd.DataFrame:
-    """Assign equal weights across all rows in a frame."""
-    portfolio = frame.copy()
-    count = len(portfolio.index)
-    portfolio["weight"] = 0.0 if count == 0 else 1.0 / count
-    return portfolio[[id_column, "weight"]]

@@ -8,14 +8,13 @@ def keep_stocks_with_min_history(
     stock_column: str = "PERMNO",
     return_column: str = "RET ADJ",
     min_periods: int = 36,
-    date_column: str | None = None,
 ) -> pd.DataFrame:
     """Keep stocks with at least the required number of usable monthly return observations."""
-    valid_stocks = frame.groupby(stock_column)[return_column].apply(
-        lambda s: pd.to_numeric(s, errors="coerce").notna().sum()
-    )
-    valid_ids = valid_stocks[valid_stocks >= min_periods].index
-    return frame.loc[frame[stock_column].isin(valid_ids)].copy()
+    cleaned = frame.copy()
+    cleaned[return_column] = pd.to_numeric(cleaned[return_column], errors="coerce")
+    valid_counts = cleaned.groupby(stock_column)[return_column].count()
+    valid_ids = valid_counts[valid_counts >= min_periods].index
+    return cleaned.loc[cleaned[stock_column].isin(valid_ids)].copy()
 
 
 def add_dividend_yield(
@@ -31,36 +30,36 @@ def add_dividend_yield(
     return enriched
 
 
-def add_trailing_dividend_yield(
-    frame: pd.DataFrame,
-    stock_column: str = "PERMNO",
-    dividend_yield_column: str = "Div Yield",
-    output_column: str = "1-yr Div Yield",
-    window: int = 24,
-) -> pd.DataFrame:
-    """Add a legacy notebook feature that is not in the paper's core NPY definition."""
-    enriched = frame.copy()
-    enriched[output_column] = (
-        enriched.groupby(stock_column)[dividend_yield_column]
-        .rolling(window=window, min_periods=window)
-        .sum()
-        .reset_index(level=0, drop=True)
-    )
-    return enriched
+# def add_trailing_dividend_yield(
+#     frame: pd.DataFrame,
+#     stock_column: str = "PERMNO",
+#     dividend_yield_column: str = "Div Yield",
+#     output_column: str = "1-yr Div Yield",
+#     window: int = 24,
+# ) -> pd.DataFrame:
+#     """Add a legacy notebook feature that is not in the paper's core NPY definition."""
+#     enriched = frame.copy()
+#     enriched[output_column] = (
+#         enriched.groupby(stock_column)[dividend_yield_column]
+#         .rolling(window=window, min_periods=window)
+#         .sum()
+#         .reset_index(level=0, drop=True)
+#     )
+#     return enriched
 
 
-def drop_duplicate_stock_dates(
-    frame: pd.DataFrame,
-    stock_column: str = "PERMNO",
-    date_column: str = "Date",
-    tie_breaker_column: str = "DIVAMT",
-) -> pd.DataFrame:
-    """Resolve duplicate stock-date rows the same way as the legacy notebook."""
-    deduped = frame.sort_values(
-        [stock_column, date_column, tie_breaker_column],
-        ascending=[True, True, False],
-    )
-    return deduped.drop_duplicates(subset=[stock_column, date_column], keep="first").copy()
+# def drop_duplicate_stock_dates(
+#     frame: pd.DataFrame,
+#     stock_column: str = "PERMNO",
+#     date_column: str = "Date",
+#     tie_breaker_column: str = "DIVAMT",
+# ) -> pd.DataFrame:
+#     """Resolve duplicate stock-date rows the same way as the legacy notebook."""
+#     deduped = frame.sort_values(
+#         [stock_column, date_column, tie_breaker_column],
+#         ascending=[True, True, False],
+#     )
+#     return deduped.drop_duplicates(subset=[stock_column, date_column], keep="first").copy()
 
 
 def add_net_payout_yield(
@@ -70,8 +69,9 @@ def add_net_payout_yield(
     div_yield_column: str = "Div Yield",
     average_window: int = 24,
 ) -> pd.DataFrame:
-    """Add the legacy notebook NPY components used in the Dec2 presentation code."""
+    """Add net payout yield and components required to calculate it."""
     enriched = frame.copy()
+    enriched = enriched.sort_values([stock_column, "Date"])
     enriched["Shares_24M_Avg"] = (
         enriched.groupby(stock_column)[shares_column]
         .rolling(window=average_window, min_periods=average_window)
@@ -111,14 +111,6 @@ def calculate_12_1_momentum(
 ) -> pd.DataFrame:
     """Reproduce the legacy notebook's 12-1 momentum definition from prices."""
     enriched = frame.sort_values(by=[stock_column, date_column]).copy()
-    enriched[momentum_column] = (
-        enriched.groupby(stock_column)[price_column]
-        .apply(lambda x: (x.shift(1) / x.shift(12)) - 1)
-        .reset_index(level=0, drop=True)
-    )
+    grouped_price = enriched.groupby(stock_column)[price_column]
+    enriched[momentum_column] = grouped_price.shift(1) / grouped_price.shift(12) - 1
     return enriched
-
-
-def rank_factor(frame: pd.DataFrame, factor_column: str, ascending: bool = True) -> pd.Series:
-    """Rank a factor column within the provided frame."""
-    return frame[factor_column].rank(ascending=ascending, method="first")

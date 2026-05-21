@@ -1,6 +1,6 @@
 # Conservative Formula Replication
 
-This repository contains a cleaned, script-based replication of the Conservative Formula strategy and related exhibits based on van Vliet and de Koning. It rebuilds the portfolio pipeline from CRSP-style monthly data, reproduces the main exhibit logic from the original project, and extends the sample beyond the original paper window.
+This repository contains a cleaned replication of the Conservative Formula strategy and related exhibits based on van Vliet and de Koning. It rebuilds the portfolio pipeline from CRSP-style monthly data, reproduces the main exhibit logic from the original project, and extends the sample beyond the original paper window.
 
 The codebase is organized to keep raw-data preparation, portfolio construction, and exhibit generation separate so the workflow is easy to rerun and review.
 

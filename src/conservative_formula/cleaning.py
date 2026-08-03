@@ -12,6 +12,7 @@ EXCHANGE_CODE_MAP = {
 }
 
 VALID_EXCHANGES = {"NYSE", "AMEX", "NASDAQ"}
+COMMON_SHARE_CODES = {10, 11}
 RETURN_CAP = 5.0
 
 
@@ -27,9 +28,18 @@ def rename_and_parse_date(frame: pd.DataFrame) -> pd.DataFrame:
 def filter_supported_exchanges(frame: pd.DataFrame) -> pd.DataFrame:
     """Keep only NYSE, AMEX, and NASDAQ observations."""
     cleaned = frame.copy()
+    cleaned = cleaned.sort_values(["PERMNO", "Date"])
     exchcd = pd.to_numeric(cleaned["EXCHCD"], errors="coerce").astype("Int64")
+    exchcd = exchcd.groupby(cleaned["PERMNO"]).ffill()
     cleaned["EXCHCD"] = exchcd.astype(str).replace(EXCHANGE_CODE_MAP)
     return cleaned.loc[cleaned["EXCHCD"].isin(VALID_EXCHANGES)].copy()
+
+
+def filter_common_shares(frame: pd.DataFrame) -> pd.DataFrame:
+    """Keep only ordinary common shares (CRSP SHRCD 10/11)."""
+    cleaned = frame.copy()
+    shrcd = pd.to_numeric(cleaned["SHRCD"], errors="coerce")
+    return cleaned.loc[shrcd.isin(COMMON_SHARE_CODES)].copy()
 
 
 def clean_basic_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -55,12 +65,18 @@ def build_adjusted_return(frame: pd.DataFrame) -> pd.DataFrame:
     # Default to the ordinary monthly return.
     cleaned["RET ADJ"] = cleaned["RET"]
 
-    # Use CRSP delisting return when it is available.
-    cleaned.loc[cleaned["DLRET"].notna(), "RET ADJ"] = cleaned["DLRET"]
+    # Compound the ordinary monthly return with the CRSP delisting return when
+    # both are present, rather than substituting one for the other.
+    has_dlret = cleaned["DLRET"].notna()
+    cleaned.loc[has_dlret, "RET ADJ"] = (
+        (1.0 + cleaned.loc[has_dlret, "RET"].fillna(0.0)) * (1.0 + cleaned.loc[has_dlret, "DLRET"]) - 1.0
+    )
 
-    # Impute -30% for selected performance-related delistings when no usable
-    # delisting return is available.
-    cleaned.loc[cleaned["DLRET"].isna() & performance_delist, "RET ADJ"] = -0.3
+    # Impute -30% (NYSE/AMEX) or -55% (NASDAQ) for selected performance-related
+    # delistings when no usable delisting return is available.
+    missing_dlret_performance = cleaned["DLRET"].isna() & performance_delist
+    cleaned.loc[missing_dlret_performance & (cleaned["EXCHCD"] == "NASDAQ"), "RET ADJ"] = -0.55
+    cleaned.loc[missing_dlret_performance & (cleaned["EXCHCD"] != "NASDAQ"), "RET ADJ"] = -0.3
 
     recognized_delisting = (
         cleaned["DLSTCD"].isna()
@@ -84,12 +100,28 @@ def add_market_cap_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return cleaned
 
 
+def filter_primary_share_class(
+    frame: pd.DataFrame,
+    date_column: str = "Date",
+    company_column: str = "PERMCO",
+    mkt_cap_column: str = "MKT Cap",
+) -> pd.DataFrame:
+    """Keep only the largest-market-cap PERMNO per PERMCO for each date."""
+    return (
+        frame.sort_values(by=[date_column, company_column, mkt_cap_column], ascending=[True, True, False])
+        .drop_duplicates(subset=[date_column, company_column], keep="first")
+        .copy()
+    )
+
+
 def prepare_initial_stock_panel(frame: pd.DataFrame) -> pd.DataFrame:
     """Apply the first end-to-end cleaning block from the legacy notebook."""
     cleaned = rename_and_parse_date(frame)
     cleaned = filter_supported_exchanges(cleaned)
+    cleaned = filter_common_shares(cleaned)
     cleaned = clean_basic_columns(cleaned)
     cleaned = build_adjusted_return(cleaned)
     cleaned = add_market_cap_columns(cleaned)
+    cleaned = filter_primary_share_class(cleaned)
     return cleaned
 

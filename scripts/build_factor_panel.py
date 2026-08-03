@@ -59,7 +59,15 @@ def main() -> None:
 
     print("Applying factor construction pipeline...")
     frame = keep_stocks_with_min_history(frame, stock_column="PERMNO", min_periods=36)
-    frame = add_dividend_yield(frame, dividend_column="DIVAMT", price_column="ALTPRC", output_column="Div Yield")
+    frame = add_dividend_yield(
+        frame,
+        stock_column="PERMNO",
+        date_column="Date",
+        dividend_column="DIVAMT",
+        price_column="ALTPRC",
+        output_column="Div Yield",
+        window=12,
+    )
     
     frame = add_net_payout_yield(
         frame,
@@ -72,7 +80,7 @@ def main() -> None:
         frame,
         stock_column="PERMNO",
         date_column="Date",
-        price_column="ALTPRC",
+        return_column="RET ADJ",
         momentum_column="Momentum",
     )
     frame = calculate_rolling_volatility(

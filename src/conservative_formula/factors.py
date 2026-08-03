@@ -19,66 +19,45 @@ def keep_stocks_with_min_history(
 
 def add_dividend_yield(
     frame: pd.DataFrame,
+    stock_column: str = "PERMNO",
+    date_column: str = "Date",
     dividend_column: str = "DIVAMT",
     price_column: str = "ALTPRC",
     output_column: str = "Div Yield",
+    window: int = 12,
 ) -> pd.DataFrame:
-    """Add the one-period dividend yield used in the legacy notebook."""
-    enriched = frame.copy()
-    enriched[output_column] = enriched[dividend_column] / enriched[price_column]
-    enriched[output_column] = enriched[output_column].fillna(0)
+    """Add a trailing 12-month dividend yield."""
+    enriched = frame.sort_values([stock_column, date_column]).copy()
+    trailing_dividends = (
+        enriched.groupby(stock_column)[dividend_column]
+        .rolling(window=window, min_periods=window)
+        .sum()
+        .reset_index(level=0, drop=True)
+    )
+    enriched[output_column] = trailing_dividends / enriched[price_column]
     return enriched
-
-
-# def add_trailing_dividend_yield(
-#     frame: pd.DataFrame,
-#     stock_column: str = "PERMNO",
-#     dividend_yield_column: str = "Div Yield",
-#     output_column: str = "1-yr Div Yield",
-#     window: int = 24,
-# ) -> pd.DataFrame:
-#     """Add a legacy notebook feature that is not in the paper's core NPY definition."""
-#     enriched = frame.copy()
-#     enriched[output_column] = (
-#         enriched.groupby(stock_column)[dividend_yield_column]
-#         .rolling(window=window, min_periods=window)
-#         .sum()
-#         .reset_index(level=0, drop=True)
-#     )
-#     return enriched
-
-
-# def drop_duplicate_stock_dates(
-#     frame: pd.DataFrame,
-#     stock_column: str = "PERMNO",
-#     date_column: str = "Date",
-#     tie_breaker_column: str = "DIVAMT",
-# ) -> pd.DataFrame:
-#     """Resolve duplicate stock-date rows the same way as the legacy notebook."""
-#     deduped = frame.sort_values(
-#         [stock_column, date_column, tie_breaker_column],
-#         ascending=[True, True, False],
-#     )
-#     return deduped.drop_duplicates(subset=[stock_column, date_column], keep="first").copy()
 
 
 def add_net_payout_yield(
     frame: pd.DataFrame,
     stock_column: str = "PERMNO",
     shares_column: str = "SHROUT",
+    shares_adj_factor_column: str = "CFACSHR",
     div_yield_column: str = "Div Yield",
     average_window: int = 24,
 ) -> pd.DataFrame:
     """Add net payout yield and components required to calculate it."""
     enriched = frame.copy()
     enriched = enriched.sort_values([stock_column, "Date"])
+    adj_factor = enriched[shares_adj_factor_column].where(enriched[shares_adj_factor_column] > 0)
+    enriched["Shares_Adj"] = enriched[shares_column] * adj_factor
     enriched["Shares_24M_Avg"] = (
-        enriched.groupby(stock_column)[shares_column]
+        enriched.groupby(stock_column)["Shares_Adj"]
         .rolling(window=average_window, min_periods=average_window)
         .mean()
         .reset_index(level=0, drop=True)
     )
-    enriched["Net_Shares_Change"] = (enriched["Shares_24M_Avg"] / enriched[shares_column]) - 1
+    enriched["Net_Shares_Change"] = (enriched["Shares_24M_Avg"] / enriched["Shares_Adj"]) - 1
     enriched["Net_Payout_Yield"] = enriched[div_yield_column] + enriched["Net_Shares_Change"]
     return enriched
 
@@ -106,11 +85,12 @@ def calculate_12_1_momentum(
     frame: pd.DataFrame,
     stock_column: str,
     date_column: str,
-    price_column: str,
+    return_column: str,
     momentum_column: str = "Momentum",
 ) -> pd.DataFrame:
-    """Reproduce the legacy notebook's 12-1 momentum definition from prices."""
+    """Reproduce the legacy notebook's 12-1 momentum definition from returns."""
     enriched = frame.sort_values(by=[stock_column, date_column]).copy()
-    grouped_price = enriched.groupby(stock_column)[price_column]
-    enriched[momentum_column] = grouped_price.shift(1) / grouped_price.shift(12) - 1
+    gross = 1.0 + enriched[return_column]
+    cum11 = gross.groupby(enriched[stock_column]).transform(lambda s: s.rolling(11).apply(lambda w: w.prod(), raw=True))
+    enriched[momentum_column] = cum11.groupby(enriched[stock_column]).shift(1) - 1
     return enriched

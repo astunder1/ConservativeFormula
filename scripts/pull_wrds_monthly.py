@@ -68,12 +68,14 @@ def build_main_sql(start_date: str, end_date: str) -> str:
         )
         SELECT
             a.permno AS "PERMNO",
+            a.permco AS "PERMCO",
             a.date AS "Date",
             a.ret AS "RET",
             a.retx AS "RETX",
             a.prc AS "PRC",
             a.altprc AS "ALTPRC",
             a.shrout AS "SHROUT",
+            a.cfacshr AS "CFACSHR",
             b.exchcd AS "EXCHCD",
             b.shrcd AS "SHRCD",
             b.ticker AS "TICKER",
@@ -105,11 +107,13 @@ def clean_types(frame: pd.DataFrame) -> pd.DataFrame:
 
     numeric_columns = [
         "PERMNO",
+        "PERMCO",
         "RET",
         "RETX",
         "PRC",
         "ALTPRC",
         "SHROUT",
+        "CFACSHR",
         "EXCHCD",
         "SHRCD",
         "DLRET",

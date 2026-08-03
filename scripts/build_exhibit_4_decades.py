@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.ticker import PercentFormatter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market-input", default=str(DEFAULT_MARKET_INPUT))
     parser.add_argument("--table-output", default=str(DEFAULT_TABLE_OUTPUT))
     parser.add_argument("--plot-output", default=str(DEFAULT_PLOT_OUTPUT))
+    parser.add_argument("--end-date", default="2016-12-31")
     return parser.parse_args()
 
 
@@ -89,12 +91,17 @@ def main() -> None:
     table_output = Path(args.table_output)
     plot_output = Path(args.plot_output)
 
+    end_date = pd.Timestamp(args.end_date)
+
     print(f"Loading conservative returns from {conservative_input}")
     conservative = load_stock_data(conservative_input)
+    conservative = conservative[pd.to_datetime(conservative["Date"]) <= end_date].copy()
     print(f"Loading speculative returns from {speculative_input}")
     speculative = load_stock_data(speculative_input)
+    speculative = speculative[pd.to_datetime(speculative["Date"]) <= end_date].copy()
     print(f"Loading cleaned market panel from {market_input}")
     market_panel = load_stock_data(market_input)
+    market_panel = market_panel[pd.to_datetime(market_panel["Date"]) <= end_date].copy()
 
     market_returns = build_value_weighted_market_returns(market_panel)
     market_returns["YearMonth"] = market_returns["YearMonth"].dt.to_timestamp()

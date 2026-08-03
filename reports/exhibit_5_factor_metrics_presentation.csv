@@ -1,0 +1,8 @@
+,Formula,Market,Small,Momentum,Low Vol,NPY,Speculative
+Return (simple) (%),15.5,10.6,18.5,18.2,11.0,16.3,10.2
+Return (compounded) (%),15.0,9.3,14.4,15.9,10.5,15.1,4.4
+Difference (Simple-Compounded) (%),0.5,1.4,4.2,2.3,0.5,1.2,5.8
+Volatility (%),17.1,18.7,34.8,26.0,14.1,21.2,36.3
+De-Risking Factor (%),100.0,91.2,49.1,65.5,120.8,80.4,47.0
+Sharpe Ratio (simple),0.7,0.4,0.4,0.6,0.5,0.6,0.2
+Return Same Risk (%),15.5,10.0,10.8,13.1,12.6,13.8,6.6

@@ -1,8 +1,8 @@
 ﻿from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -16,10 +16,19 @@ MARKET_PANEL_PATH = DATA_PROCESSED / 'crsp_us_monthly_initial.parquet'
 FACTOR_PANEL_PATH = DATA_PROCESSED / 'crsp_us_monthly_factors.parquet'
 FF_PATH = DATA_PROCESSED / 'ff_factors_monthly.parquet'
 
+
 METRICS_OUTPUT = OUTPUT_DIR / 'exhibit_5_factor_metrics.csv'
 RETURNS_OUTPUT = OUTPUT_DIR / 'exhibit_5_factor_returns.csv'
-CHART_OUTPUT = OUTPUT_DIR / 'exhibit_5_factor_metrics.png'
 PRESENTATION_OUTPUT = OUTPUT_DIR / 'exhibit_5_factor_metrics_presentation.csv'
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build Exhibit 5 style factor comparison table and chart.")
+    parser.add_argument("--start-date", default="1929-01-01")
+    parser.add_argument("--end-date", default="2016-12-31")
+    parser.add_argument("--output-suffix", default="")
+    return parser.parse_args()
+
 
 FACTOR_MAP = {
     'Formula': None,
@@ -184,45 +193,26 @@ def build_presentation_table(summary: pd.DataFrame) -> pd.DataFrame:
     return present.round(1)
 
 
-def save_chart(summary: pd.DataFrame) -> None:
-    present = summary.copy()
-    present['DisplayPortfolio'] = present['Portfolio'].map(DISPLAY_NAME_MAP)
-    present['Portfolio'] = pd.Categorical(present['Portfolio'], categories=COLUMN_ORDER, ordered=True)
-    present = present.sort_values('Portfolio')
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    colors = ['#111111', '#7f7f7f', '#4d4d4d', '#2ca02c', '#ff7f0e', '#9467bd', '#c7c7c7']
-    metrics = [
-        ('Return (compounded) (%)', 'Compounded Return (%)'),
-        ('Volatility (%)', 'Volatility (%)'),
-        ('Sharpe Ratio (simple)', 'Sharpe Ratio'),
-    ]
-
-    for ax, (column, title) in zip(axes, metrics):
-        ax.bar(present['DisplayPortfolio'], present[column], color=colors[: len(present)])
-        ax.set_title(title)
-        ax.tick_params(axis='x', rotation=45)
-        ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.5)
-
-    fig.suptitle('Exhibit 5: Conservative Formula Versus Other Factors', fontsize=16, fontweight='bold')
-    fig.tight_layout()
-    fig.savefig(CHART_OUTPUT, dpi=200, bbox_inches='tight')
-    plt.close(fig)
-
-
 def main() -> None:
+    args = parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    metrics_output = OUTPUT_DIR / f'exhibit_5_factor_metrics{args.output_suffix}.csv'
+    returns_output = OUTPUT_DIR / f'exhibit_5_factor_returns{args.output_suffix}.csv'
+    presentation_output = OUTPUT_DIR / f'exhibit_5_factor_metrics_presentation{args.output_suffix}.csv'
+
+    start_date = pd.Timestamp(args.start_date)
+    end_date = pd.Timestamp(args.end_date)
+    start_month = start_date.to_period('M')
+    end_month = end_date.to_period('M')
+
     conservative = load_portfolio(CONSERVATIVE_PATH)
+    conservative = conservative.loc[(conservative['YearMonth'] >= start_month) & (conservative['YearMonth'] <= end_month)].copy()
     speculative = load_portfolio(SPECULATIVE_PATH)
+    speculative = speculative.loc[(speculative['YearMonth'] >= start_month) & (speculative['YearMonth'] <= end_month)].copy()
     market_panel = pd.read_parquet(MARKET_PANEL_PATH)
     factor_panel = pd.read_parquet(FACTOR_PANEL_PATH)
     ff = ensure_yearmonth(pd.read_parquet(FF_PATH), date_col='Date')
-
-    start_month = conservative['YearMonth'].min()
-    end_month = conservative['YearMonth'].max()
-    start_date = start_month.to_timestamp(how='end').normalize()
-    end_date = end_month.to_timestamp(how='end').normalize()
 
     market = build_value_weighted_market_returns(market_panel)
     market = market.loc[(market['YearMonth'] >= start_month) & (market['YearMonth'] <= end_month)].copy()
@@ -242,25 +232,23 @@ def main() -> None:
         [frame.assign(Portfolio=name) for name, frame in standalone_returns.items()],
         ignore_index=True,
     )
-    returns_export.to_csv(RETURNS_OUTPUT, index=False)
+    returns_export.to_csv(returns_output, index=False)
 
     rf_merged = {name: merge_with_rf(frame, ff) for name, frame in standalone_returns.items()}
     cons_returns = rf_merged['Formula']['Portfolio Returns']
     summary = pd.DataFrame([summarize_series(name, frame, cons_returns) for name, frame in rf_merged.items()])
-    summary.to_csv(METRICS_OUTPUT, index=False)
+    summary.to_csv(metrics_output, index=False)
 
     presentation = build_presentation_table(summary)
-    presentation.to_csv(PRESENTATION_OUTPUT)
-    save_chart(summary)
+    presentation.to_csv(presentation_output)
 
-    print(f'Saved Exhibit 5 metrics to {METRICS_OUTPUT}')
-    print(f'Saved Exhibit 5 return series to {RETURNS_OUTPUT}')
-    print(f'Saved Exhibit 5 presentation table to {PRESENTATION_OUTPUT}')
-    print(f'Saved Exhibit 5 chart to {CHART_OUTPUT}')
+    print(f'Saved Exhibit 5 metrics to {metrics_output}')
+    print(f'Saved Exhibit 5 return series to {returns_output}')
+    print(f'Saved Exhibit 5 presentation table to {presentation_output}')
     print(summary.to_string(index=False, float_format=lambda x: f'{x:.4f}'))
     print('\nPresentation Table:')
     print(presentation.to_string())
-    print('\nNote: the paper exhibit uses Value, while this rebuild currently uses NPY because book-to-market is not in the factor panel.')
+    print("\nNote: Value is omitted (requires book-to-market/accounting data); NPY is one of the paper's own Exhibit 5 columns, not a substitute for Value.")
 
 
 if __name__ == '__main__':

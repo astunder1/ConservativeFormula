@@ -134,6 +134,33 @@ def build_cms_panel(conservative_returns: pd.DataFrame, speculative_returns: pd.
     return pd.merge(cms, ensure_yearmonth(factor_frame), on="YearMonth", how="inner")
 
 
+def add_rolling_beta_neutral_column(
+    frame: pd.DataFrame,
+    long_column: str = "Conservative",
+    short_column: str = "Speculative",
+    market_column: str = "mktrf",
+    output_column: str = "BetaNeutral",
+    window: int = 36,
+) -> pd.DataFrame:
+    """Delever the short leg and lever the long leg to a trailing beta of one, then spread them.
+
+    Beta for month t is estimated from months t-window..t-1 (shifted by one),
+    so the hedge ratio applied to month t only uses information available before it.
+    """
+    enriched = frame.copy()
+    rolling_cov_long = enriched[long_column].rolling(window).cov(enriched[market_column])
+    rolling_cov_short = enriched[short_column].rolling(window).cov(enriched[market_column])
+    rolling_var = enriched[market_column].rolling(window).var()
+
+    beta_long = (rolling_cov_long / rolling_var).shift(1)
+    beta_short = (rolling_cov_short / rolling_var).shift(1)
+
+    long_levered = enriched[long_column] / beta_long
+    short_delevered = enriched[short_column] / beta_short
+    enriched[output_column] = long_levered - short_delevered
+    return enriched
+
+
 def run_factor_regressions(frame: pd.DataFrame, y_column: str, factor_combinations: list[list[str]]) -> pd.DataFrame:
     import statsmodels.api as sm
 

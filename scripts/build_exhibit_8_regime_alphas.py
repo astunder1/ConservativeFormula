@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import sys
 
@@ -21,10 +22,19 @@ FF3_PATH = PROCESSED_DIR / "ff3_monthly.parquet"
 REGIME_PATH = PROCESSED_DIR / "economic_regimes_monthly.parquet"
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build Exhibit 9 style regime alpha table and chart.")
+    parser.add_argument("--end-date", default="2016-12-31")
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+    end_date = pd.Timestamp(args.end_date)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     conservative = pd.read_parquet(CONS_PATH)
+    conservative = conservative[pd.to_datetime(conservative["Date"]) <= end_date].copy()
     ff3 = pd.read_parquet(FF3_PATH)
     regimes = pd.read_parquet(REGIME_PATH)
 

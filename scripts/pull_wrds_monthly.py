@@ -7,11 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-try:
-    import wrds
-except ImportError:
-    print("Missing package 'wrds'. Install it with: pip install wrds")
-    sys.exit(1)
+
+import wrds
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
